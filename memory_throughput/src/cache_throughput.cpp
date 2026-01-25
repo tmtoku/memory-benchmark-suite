@@ -39,9 +39,8 @@ namespace cache_throughput
 
     using BufferPtr = std::unique_ptr<std::uint64_t, void (*)(void*)>;
 
-    FORCE_INLINE void load_kernel(const std::uint64_t* const buffer, const std::size_t num_elements,
-                                  const std::size_t num_reps)
-    {
+    constexpr auto load_kernel = [](const std::uint64_t* const buffer, const std::size_t num_elements,
+                                    const std::size_t num_reps) {
         constexpr auto UNROLL_COUNT = std::size_t{16};
         constexpr auto SIMD_ELEMENTS = sizeof(__m256i) / sizeof(std::uint64_t);
 
@@ -56,7 +55,7 @@ namespace cache_throughput
                 }
             }
         }
-    }
+    };
 
     void print_csv_header()
     {
@@ -102,8 +101,9 @@ namespace cache_throughput
         }
     }
 
+    template <typename Kernel>
     void run_benchmark(const std::vector<BufferPtr>& thread_local_buffers, const std::size_t buffer_size,
-                       const std::int32_t num_threads)
+                       const std::int32_t num_threads, Kernel&& kernel)
     {
         constexpr auto NUM_WARMUPS = std::int32_t{3};
         constexpr auto NUM_TRIALS = std::int32_t{20};
@@ -143,14 +143,14 @@ namespace cache_throughput
 
                 for (std::int32_t i = 0; i < NUM_WARMUPS + NUM_TRIALS; ++i)
                 {
-                    load_kernel(buffer, num_elements, 1);
+                    kernel(buffer, num_elements, 1);
 #pragma omp barrier
                     const auto start_cycles = perf_counter_read(&cycle_counter);
                     const auto start_loads = perf_counter_read(&load_counter);
                     const auto start_stalls = perf_counter_read(&load_queue_stall_counter);
                     const auto start_refills = perf_counter_read(&l3_miss_counter);
 
-                    load_kernel(buffer, num_elements, num_reps);
+                    kernel(buffer, num_elements, num_reps);
 
                     const auto current_cycles = perf_counter_read(&cycle_counter) - start_cycles;
                     const auto current_loads = perf_counter_read(&load_counter) - start_loads;
@@ -194,7 +194,7 @@ int main()
                                                   const std::size_t max_size) {
             for (auto size = min_size; size <= max_size; size *= 2)
             {
-                run_benchmark(thread_local_buffers, size, num_threads);
+                run_benchmark(thread_local_buffers, size, num_threads, load_kernel);
             }
         };
 
