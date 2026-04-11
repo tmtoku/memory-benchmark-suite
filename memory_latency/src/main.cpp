@@ -169,12 +169,25 @@ int main()
         const auto cache_line_bytes = common::get_cache_line_bytes();
         const auto page_size = common::get_page_size();
 
-        for (auto size = 16 * common::KiB; size <= 1 * common::GiB; size *= 2)  // NOLINT(readability-magic-numbers)
-        {
-            memory_latency::run_benchmark(size, cache_line_bytes, true);
+        constexpr auto MIN_SIZE = 16 * common::KiB;
+        constexpr auto MAX_SIZE = 256 * common::MiB;
+        constexpr auto NUM_BINS = std::size_t{4};
 
-            memory_latency::run_benchmark(size, page_size, true);
-            memory_latency::run_benchmark(size, page_size, false);
+        if ((MIN_SIZE / NUM_BINS) % page_size != 0)
+        {
+            fprintf(stderr, "Error: MIN_SIZE / NUM_BINS must be a multiple of page_size (%zu).\n", page_size);
+            return 1;
+        }
+
+        for (auto start_size = MIN_SIZE, step = MIN_SIZE / NUM_BINS; start_size <= MAX_SIZE; start_size *= 2, step *= 2)
+        {
+            for (auto size = start_size; size <= MAX_SIZE && size < start_size * 2; size += step)
+            {
+                memory_latency::run_benchmark(size, cache_line_bytes, true);
+
+                memory_latency::run_benchmark(size, page_size, true);
+                memory_latency::run_benchmark(size, page_size, false);
+            }
         }
     }
     catch (const std::exception& e)
