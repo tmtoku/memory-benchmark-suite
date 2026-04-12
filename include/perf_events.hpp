@@ -3,7 +3,6 @@
 namespace perf_events
 {
     constexpr auto CYCLES = "CYCLES";
-    constexpr auto TLB_MISS = "DTLB-LOAD-MISSES";
 #ifdef __znver2__
     constexpr auto L1D_MISS =
         "amd64_fam17h_zen2::DATA_CACHE_REFILLS_FROM_SYSTEM"
@@ -22,6 +21,11 @@ namespace perf_events
         "amd64_fam17h_zen2::DATA_CACHE_REFILLS_FROM_SYSTEM"
         ":LS_MABRESP_LCL_DRAM"
         ":LS_MABRESP_RMT_DRAM";
+    constexpr auto L1_TLB_MISS =
+        "amd64_fam17h_zen2::L1_DTLB_MISS"
+        ":TLB_RELOAD_4K_L2_HIT"
+        ":TLB_RELOAD_4K_L2_MISS";
+    constexpr auto L2_TLB_MISS = "amd64_fam17h_zen2::L1_DTLB_MISS:TLB_RELOAD_4K_L2_MISS";
     constexpr auto LOADS =
         "amd64_fam17h_zen2::LS_DISPATCH"
         ":LD_DISPATCH";
@@ -32,6 +36,8 @@ namespace perf_events
     constexpr auto L1D_MISS = "L1-DCACHE-LOAD-MISSES";
     constexpr auto L2_MISS = "LLC-LOAD-MISSES";
     constexpr auto L3_MISS = "LLC-LOAD-MISSES";
+    constexpr auto L1_TLB_MISS = "";
+    constexpr auto L2_TLB_MISS = "DTLB-LOAD-MISSES";
     constexpr auto LOADS_EVENT = "";
     constexpr auto LOAD_QUEUE_STALL_CYCLES = "";
 #endif

@@ -19,7 +19,8 @@ def load_benchmark_data(filename):
     df["L1DMissRate"] = (df["L1DMisses"] / num_loads) * 100
     df["L2MissRate"] = (df["L2Misses"] / num_loads) * 100
     df["L3MissRate"] = (df["L3Misses"] / num_loads) * 100
-    df["TLBMissRate"] = (df["TLBMisses"] / num_loads) * 100
+    df["L1TLBMissRate"] = (df["L1TLBMisses"] / num_loads) * 100
+    df["L2TLBMissRate"] = (df["L2TLBMisses"] / num_loads) * 100
 
     df["PageEntries"] = np.ceil(df["BufferSize"] / df["PageSize"]).astype(int)
 
@@ -35,7 +36,8 @@ def print_table(title, df, columns, labels):
         "L1DMissRate": "{:.2f}".format,
         "L2MissRate": "{:.2f}".format,
         "L3MissRate": "{:.2f}".format,
-        "TLBMissRate": "{:.2f}".format,
+        "L1TLBMissRate": "{:.2f}".format,
+        "L2TLBMissRate": "{:.2f}".format,
     }
 
     table = df[columns].to_string(index=False, header=labels, formatters=FORMATTERS)
@@ -60,14 +62,13 @@ def print_cache_latency_table(df):
     subset = subset.sort_values(by="BufferSize", ascending=True)
 
     title = "Cache Hierarchy Analysis (PaddedElementSize: 64 Bytes)"
-    cols = ["BufferSize", "Latency", "L1DMissRate", "L2MissRate", "L3MissRate", "TLBMissRate"]
+    cols = ["BufferSize", "Latency", "L1DMissRate", "L2MissRate", "L3MissRate"]
     headers = [
         "BufferSize",
         "Latency (cycles)",
         "L1DMiss (%)",
         "L2Miss (%)",
         "L3Miss (%)",
-        "TLBMiss (%)",
     ]
 
     print_table(title, subset, cols, headers)
@@ -87,20 +88,16 @@ def print_tlb_latency_table(df):
         "PageSize",
         "PageEntries",
         "Latency",
-        "L1DMissRate",
-        "L2MissRate",
-        "L3MissRate",
-        "TLBMissRate",
+        "L1TLBMissRate",
+        "L2TLBMissRate",
     ]
     headers = [
         "BufferSize",
         "PageSize",
         "PageEntries",
         "Latency (cycles)",
-        "L1DMiss (%)",
-        "L2Miss (%)",
-        "L3Miss (%)",
-        "TLBMiss (%)",
+        "L1TLBMiss (%)",
+        "L2TLBMiss (%)",
     ]
 
     print_table(title, subset, cols, headers)

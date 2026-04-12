@@ -19,13 +19,14 @@ namespace memory_latency
         std::uint64_t l1d_miss_count = 0;
         std::uint64_t l2_miss_count = 0;
         std::uint64_t l3_miss_count = 0;
-        std::uint64_t tlb_miss_count = 0;
+        std::uint64_t l1_tlb_miss_count = 0;
+        std::uint64_t l2_tlb_miss_count = 0;
     };
 
     void print_csv_header()
     {
-        std::cout
-            << "BufferSize,PaddedElementSize,PageSize,NumLogicalLoads,Cycles,L1DMisses,L2Misses,L3Misses,TLBMisses\n";
+        std::cout << "BufferSize,PaddedElementSize,PageSize,NumLogicalLoads,Cycles,L1DMisses,L2Misses,L3Misses,"
+                     "L1TLBMisses,L2TLBMisses\n";
     }
 
     void print_csv_row(const std::size_t buffer_size, const std::size_t padded_element_size,
@@ -33,7 +34,7 @@ namespace memory_latency
     {
         std::cout << buffer_size << "," << padded_element_size << "," << page_size << "," << num_logical_loads << ","
                   << result.cycle_count << "," << result.l1d_miss_count << "," << result.l2_miss_count << ","
-                  << result.l3_miss_count << "," << result.tlb_miss_count << "\n";
+                  << result.l3_miss_count << "," << result.l1_tlb_miss_count << "," << result.l2_tlb_miss_count << "\n";
     }
 
     void run_benchmark(const std::size_t buffer_size_in_bytes, const std::size_t padded_bytes_per_element,
@@ -92,10 +93,12 @@ namespace memory_latency
         auto l1d_miss_counter = open_counter(perf_events::L1D_MISS, group_fd);
         auto l2_miss_counter = open_counter(perf_events::L2_MISS, group_fd);
         auto l3_miss_counter = open_counter(perf_events::L3_MISS, group_fd);
-        auto tlb_miss_counter = open_counter(perf_events::TLB_MISS, group_fd);
+        auto l1_tlb_miss_counter = open_counter(perf_events::L1_TLB_MISS, group_fd);
+        auto l2_tlb_miss_counter = open_counter(perf_events::L2_TLB_MISS, group_fd);
 
         if (!perf_counter_is_valid(&l1d_miss_counter) || !perf_counter_is_valid(&l2_miss_counter) ||
-            !perf_counter_is_valid(&l3_miss_counter) || !perf_counter_is_valid(&tlb_miss_counter))
+            !perf_counter_is_valid(&l3_miss_counter) || !perf_counter_is_valid(&l1_tlb_miss_counter) ||
+            !perf_counter_is_valid(&l2_tlb_miss_counter))
         {
             const auto close_counter = [](perf_counter* const counter) {
                 if (perf_counter_is_valid(counter))
@@ -107,7 +110,8 @@ namespace memory_latency
             close_counter(&l1d_miss_counter);
             close_counter(&l2_miss_counter);
             close_counter(&l3_miss_counter);
-            close_counter(&tlb_miss_counter);
+            close_counter(&l1_tlb_miss_counter);
+            close_counter(&l2_tlb_miss_counter);
             close_counter(&cycle_counter);
 
             return;
@@ -122,7 +126,8 @@ namespace memory_latency
             const auto start_l1d_misses = perf_counter_read(&l1d_miss_counter);
             const auto start_l2_misses = perf_counter_read(&l2_miss_counter);
             const auto start_l3_misses = perf_counter_read(&l3_miss_counter);
-            const auto start_tlb_misses = perf_counter_read(&tlb_miss_counter);
+            const auto start_l1_tlb_misses = perf_counter_read(&l1_tlb_miss_counter);
+            const auto start_l2_tlb_misses = perf_counter_read(&l2_tlb_miss_counter);
 
             const auto start_cycles = perf_counter_read(&cycle_counter);
 
@@ -131,7 +136,8 @@ namespace memory_latency
 
             const auto end_cycles = perf_counter_read(&cycle_counter);
 
-            const auto end_tlb_misses = perf_counter_read(&tlb_miss_counter);
+            const auto end_l2_tlb_misses = perf_counter_read(&l2_tlb_miss_counter);
+            const auto end_l1_tlb_misses = perf_counter_read(&l1_tlb_miss_counter);
             const auto end_l3_misses = perf_counter_read(&l3_miss_counter);
             const auto end_l2_misses = perf_counter_read(&l2_miss_counter);
             const auto end_l1d_misses = perf_counter_read(&l1d_miss_counter);
@@ -144,12 +150,14 @@ namespace memory_latency
                 result.l1d_miss_count = end_l1d_misses - start_l1d_misses;
                 result.l2_miss_count = end_l2_misses - start_l2_misses;
                 result.l3_miss_count = end_l3_misses - start_l3_misses;
-                result.tlb_miss_count = end_tlb_misses - start_tlb_misses;
+                result.l1_tlb_miss_count = end_l1_tlb_misses - start_l1_tlb_misses;
+                result.l2_tlb_miss_count = end_l2_tlb_misses - start_l2_tlb_misses;
             }
         }
 
         perf_counter_disable(&cycle_counter);
-        perf_counter_close(&tlb_miss_counter);
+        perf_counter_close(&l2_tlb_miss_counter);
+        perf_counter_close(&l1_tlb_miss_counter);
         perf_counter_close(&l3_miss_counter);
         perf_counter_close(&l2_miss_counter);
         perf_counter_close(&l1d_miss_counter);
