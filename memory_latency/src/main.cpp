@@ -10,9 +10,16 @@
 #include <exception>
 #include <iostream>
 #include <limits>
+#include <optional>
 
 namespace memory_latency
 {
+    enum class BenchmarkTarget : std::uint8_t
+    {
+        Cache,
+        TLB
+    };
+
     struct BenchmarkResult
     {
         std::uint64_t cycle_count = std::numeric_limits<uint64_t>::max();
@@ -29,20 +36,145 @@ namespace memory_latency
                      "L1TLBMisses,L2TLBMisses\n";
     }
 
+    template <BenchmarkTarget BENCHMARK_TARGET>
     void print_csv_row(const std::size_t buffer_size, const std::size_t padded_element_size,
                        const std::size_t page_size, const std::int32_t num_logical_loads, const BenchmarkResult& result)
     {
         std::cout << buffer_size << "," << padded_element_size << "," << page_size << "," << num_logical_loads << ","
-                  << result.cycle_count << "," << result.l1d_miss_count << "," << result.l2_miss_count << ","
-                  << result.l3_miss_count << "," << result.l1_tlb_miss_count << "," << result.l2_tlb_miss_count << "\n";
+                  << result.cycle_count << ",";
+        if constexpr (BENCHMARK_TARGET == BenchmarkTarget::Cache)
+        {
+            std::cout << result.l1d_miss_count << "," << result.l2_miss_count << "," << result.l3_miss_count << ",,\n";
+        }
+        else
+        {
+            std::cout << ",,," << result.l1_tlb_miss_count << "," << result.l2_tlb_miss_count << "\n";
+        }
     }
 
-    void run_benchmark(const std::size_t buffer_size_in_bytes, const std::size_t padded_bytes_per_element,
-                       const bool use_hugepage)
+    template <BenchmarkTarget BENCHMARK_TARGET>
+    std::optional<BenchmarkResult> measure_pointer_chasing(MemoryAddress* const start_ptr, perf_counter& cycle_counter)
     {
         constexpr auto NUM_LOGICAL_LOADS = std::int32_t{1'000'000};
         constexpr auto NUM_TRIALS = std::int32_t{20};
         constexpr auto NUM_WARMUPS = std::int32_t{3};
+
+        const auto open_counter = [](const char* name, const std::int32_t group_fd) {
+            const auto counter = perf_counter_open_by_name(name, group_fd);
+            if (!perf_counter_is_valid(&counter))
+            {
+                std::cerr << "Error: Failed to open performance counter for event '" << name << "'.\n";
+            }
+            return counter;
+        };
+
+        const auto close_counter = [](perf_counter* const counter) {
+            if (perf_counter_is_valid(counter))
+            {
+                perf_counter_close(counter);
+            }
+        };
+
+        const auto group_fd = cycle_counter.fd;
+
+        BenchmarkResult result;
+
+        if constexpr (BENCHMARK_TARGET == BenchmarkTarget::Cache)
+        {
+            auto l1d_miss_counter = open_counter(perf_events::L1D_MISS, group_fd);
+            auto l2_miss_counter = open_counter(perf_events::L2_MISS, group_fd);
+            auto l3_miss_counter = open_counter(perf_events::L3_MISS, group_fd);
+
+            if (!perf_counter_is_valid(&l1d_miss_counter) || !perf_counter_is_valid(&l2_miss_counter) ||
+                !perf_counter_is_valid(&l3_miss_counter))
+            {
+                close_counter(&l1d_miss_counter);
+                close_counter(&l2_miss_counter);
+                close_counter(&l3_miss_counter);
+                return std::nullopt;
+            }
+
+            perf_counter_enable(&cycle_counter);
+
+            for (std::int32_t i = 0; i < NUM_WARMUPS + NUM_TRIALS; ++i)
+            {
+                const auto start_l1d = perf_counter_read(&l1d_miss_counter);
+                const auto start_l2 = perf_counter_read(&l2_miss_counter);
+                const auto start_l3 = perf_counter_read(&l3_miss_counter);
+                const auto start_cycles = perf_counter_read(&cycle_counter);
+
+                const auto* const last_ptr = walk_pointer_chain<NUM_LOGICAL_LOADS>(start_ptr);
+                __asm__ volatile("" ::"r"(last_ptr));
+
+                const auto end_cycles = perf_counter_read(&cycle_counter);
+                const auto end_l3 = perf_counter_read(&l3_miss_counter);
+                const auto end_l2 = perf_counter_read(&l2_miss_counter);
+                const auto end_l1d = perf_counter_read(&l1d_miss_counter);
+
+                const auto cycles = end_cycles - start_cycles;
+                if (i >= NUM_WARMUPS && cycles < result.cycle_count)
+                {
+                    result.cycle_count = cycles;
+                    result.l1d_miss_count = end_l1d - start_l1d;
+                    result.l2_miss_count = end_l2 - start_l2;
+                    result.l3_miss_count = end_l3 - start_l3;
+                }
+            }
+
+            perf_counter_disable(&cycle_counter);
+            perf_counter_close(&l3_miss_counter);
+            perf_counter_close(&l2_miss_counter);
+            perf_counter_close(&l1d_miss_counter);
+        }
+        else
+        {
+            auto l1_tlb_miss_counter = open_counter(perf_events::L1_TLB_MISS, group_fd);
+            auto l2_tlb_miss_counter = open_counter(perf_events::L2_TLB_MISS, group_fd);
+
+            if (!perf_counter_is_valid(&l1_tlb_miss_counter) || !perf_counter_is_valid(&l2_tlb_miss_counter))
+            {
+                close_counter(&l1_tlb_miss_counter);
+                close_counter(&l2_tlb_miss_counter);
+                return std::nullopt;
+            }
+
+            perf_counter_enable(&cycle_counter);
+
+            for (std::int32_t i = 0; i < NUM_WARMUPS + NUM_TRIALS; ++i)
+            {
+                const auto start_l1_tlb = perf_counter_read(&l1_tlb_miss_counter);
+                const auto start_l2_tlb = perf_counter_read(&l2_tlb_miss_counter);
+                const auto start_cycles = perf_counter_read(&cycle_counter);
+
+                const auto* const last_ptr = walk_pointer_chain<NUM_LOGICAL_LOADS>(start_ptr);
+                __asm__ volatile("" ::"r"(last_ptr));
+
+                const auto end_cycles = perf_counter_read(&cycle_counter);
+                const auto end_l2_tlb = perf_counter_read(&l2_tlb_miss_counter);
+                const auto end_l1_tlb = perf_counter_read(&l1_tlb_miss_counter);
+
+                const auto cycles = end_cycles - start_cycles;
+                if (i >= NUM_WARMUPS && cycles < result.cycle_count)
+                {
+                    result.cycle_count = cycles;
+                    result.l1_tlb_miss_count = end_l1_tlb - start_l1_tlb;
+                    result.l2_tlb_miss_count = end_l2_tlb - start_l2_tlb;
+                }
+            }
+
+            perf_counter_disable(&cycle_counter);
+            perf_counter_close(&l2_tlb_miss_counter);
+            perf_counter_close(&l1_tlb_miss_counter);
+        }
+
+        return result;
+    }
+
+    template <BenchmarkTarget BENCHMARK_TARGET>
+    void run_benchmark(const std::size_t buffer_size_in_bytes, const std::size_t padded_bytes_per_element,
+                       const bool use_hugepage)
+    {
+        constexpr auto NUM_LOGICAL_LOADS = std::int32_t{1'000'000};
         constexpr auto RAND_SEED = std::uint64_t{12345};
 
         if (buffer_size_in_bytes % padded_bytes_per_element != 0)
@@ -73,104 +205,31 @@ namespace memory_latency
         auto* const start_ptr =
             generate_random_pointer_chasing(buffer.get(), num_elements, padded_bytes_per_element, RAND_SEED);
 
-        const auto open_counter = [](const char* name, const std::int32_t group_fd) {
-            const auto counter = perf_counter_open_by_name(name, group_fd);
-            if (!perf_counter_is_valid(&counter))
-            {
-                std::cerr << "Error: Failed to open performance counter for event '" << name << "'.\n";
-            }
-            return counter;
-        };
-
-        auto cycle_counter = open_counter(perf_events::CYCLES, -1);
+        auto cycle_counter = perf_counter_open_by_name(perf_events::CYCLES, -1);
         if (!perf_counter_is_valid(&cycle_counter))
         {
+            std::cerr << "Error: Failed to open performance counter for event '" << perf_events::CYCLES << "'.\n";
             return;
         }
 
-        const auto group_fd = cycle_counter.fd;
+        const auto result = measure_pointer_chasing<BENCHMARK_TARGET>(start_ptr, cycle_counter);
 
-        auto l1d_miss_counter = open_counter(perf_events::L1D_MISS, group_fd);
-        auto l2_miss_counter = open_counter(perf_events::L2_MISS, group_fd);
-        auto l3_miss_counter = open_counter(perf_events::L3_MISS, group_fd);
-        auto l1_tlb_miss_counter = open_counter(perf_events::L1_TLB_MISS, group_fd);
-        auto l2_tlb_miss_counter = open_counter(perf_events::L2_TLB_MISS, group_fd);
-
-        if (!perf_counter_is_valid(&l1d_miss_counter) || !perf_counter_is_valid(&l2_miss_counter) ||
-            !perf_counter_is_valid(&l3_miss_counter) || !perf_counter_is_valid(&l1_tlb_miss_counter) ||
-            !perf_counter_is_valid(&l2_tlb_miss_counter))
-        {
-            const auto close_counter = [](perf_counter* const counter) {
-                if (perf_counter_is_valid(counter))
-                {
-                    perf_counter_close(counter);
-                }
-            };
-
-            close_counter(&l1d_miss_counter);
-            close_counter(&l2_miss_counter);
-            close_counter(&l3_miss_counter);
-            close_counter(&l1_tlb_miss_counter);
-            close_counter(&l2_tlb_miss_counter);
-            close_counter(&cycle_counter);
-
-            return;
-        }
-
-        perf_counter_enable(&cycle_counter);
-
-        BenchmarkResult result;
-
-        for (std::int32_t i = 0; i < NUM_WARMUPS + NUM_TRIALS; ++i)
-        {
-            const auto start_l1d_misses = perf_counter_read(&l1d_miss_counter);
-            const auto start_l2_misses = perf_counter_read(&l2_miss_counter);
-            const auto start_l3_misses = perf_counter_read(&l3_miss_counter);
-            const auto start_l1_tlb_misses = perf_counter_read(&l1_tlb_miss_counter);
-            const auto start_l2_tlb_misses = perf_counter_read(&l2_tlb_miss_counter);
-
-            const auto start_cycles = perf_counter_read(&cycle_counter);
-
-            const auto* const last_ptr = walk_pointer_chain<NUM_LOGICAL_LOADS>(start_ptr);
-            __asm__ volatile("" ::"r"(last_ptr));
-
-            const auto end_cycles = perf_counter_read(&cycle_counter);
-
-            const auto end_l2_tlb_misses = perf_counter_read(&l2_tlb_miss_counter);
-            const auto end_l1_tlb_misses = perf_counter_read(&l1_tlb_miss_counter);
-            const auto end_l3_misses = perf_counter_read(&l3_miss_counter);
-            const auto end_l2_misses = perf_counter_read(&l2_miss_counter);
-            const auto end_l1d_misses = perf_counter_read(&l1d_miss_counter);
-
-            const auto latency_cycles = end_cycles - start_cycles;
-
-            if (i >= NUM_WARMUPS && latency_cycles < result.cycle_count)
-            {
-                result.cycle_count = latency_cycles;
-                result.l1d_miss_count = end_l1d_misses - start_l1d_misses;
-                result.l2_miss_count = end_l2_misses - start_l2_misses;
-                result.l3_miss_count = end_l3_misses - start_l3_misses;
-                result.l1_tlb_miss_count = end_l1_tlb_misses - start_l1_tlb_misses;
-                result.l2_tlb_miss_count = end_l2_tlb_misses - start_l2_tlb_misses;
-            }
-        }
-
-        perf_counter_disable(&cycle_counter);
-        perf_counter_close(&l2_tlb_miss_counter);
-        perf_counter_close(&l1_tlb_miss_counter);
-        perf_counter_close(&l3_miss_counter);
-        perf_counter_close(&l2_miss_counter);
-        perf_counter_close(&l1d_miss_counter);
         perf_counter_close(&cycle_counter);
 
-        print_csv_row(buffer_size_in_bytes, padded_bytes_per_element, page_size, NUM_LOGICAL_LOADS, result);
+        if (result)
+        {
+            print_csv_row<BENCHMARK_TARGET>(buffer_size_in_bytes, padded_bytes_per_element, page_size,
+                                            NUM_LOGICAL_LOADS, result.value());
+        }
     }
 
 }  // namespace memory_latency
 
 int main()
 {
-    memory_latency::print_csv_header();
+    using namespace memory_latency;
+
+    print_csv_header();
 
     try
     {
@@ -191,10 +250,10 @@ int main()
         {
             for (auto size = start_size; size <= MAX_SIZE && size < start_size * 2; size += step)
             {
-                memory_latency::run_benchmark(size, cache_line_bytes, true);
+                run_benchmark<BenchmarkTarget::Cache>(size, cache_line_bytes, true);
 
-                memory_latency::run_benchmark(size, page_size, true);
-                memory_latency::run_benchmark(size, page_size, false);
+                run_benchmark<BenchmarkTarget::TLB>(size, page_size, true);
+                run_benchmark<BenchmarkTarget::TLB>(size, page_size, false);
             }
         }
     }
