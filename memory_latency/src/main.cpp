@@ -122,9 +122,9 @@ namespace memory_latency
             }
 
             perf_counter_disable(&cycle_counter);
-            perf_counter_close(&l3_miss_counter);
-            perf_counter_close(&l2_miss_counter);
-            perf_counter_close(&l1d_miss_counter);
+            close_counter(&l3_miss_counter);
+            close_counter(&l2_miss_counter);
+            close_counter(&l1d_miss_counter);
         }
         else
         {
@@ -163,8 +163,8 @@ namespace memory_latency
             }
 
             perf_counter_disable(&cycle_counter);
-            perf_counter_close(&l2_tlb_miss_counter);
-            perf_counter_close(&l1_tlb_miss_counter);
+            close_counter(&l2_tlb_miss_counter);
+            close_counter(&l1_tlb_miss_counter);
         }
 
         return result;
@@ -239,21 +239,16 @@ int main()
         constexpr auto MIN_SIZE = 16 * common::KiB;
         constexpr auto MAX_SIZE = 256 * common::MiB;
         constexpr auto NUM_BINS = std::size_t{4};
+        constexpr auto MIN_STEP = MIN_SIZE / NUM_BINS;
 
-        if ((MIN_SIZE / NUM_BINS) % page_size != 0)
-        {
-            fprintf(stderr, "Error: MIN_SIZE / NUM_BINS must be a multiple of page_size (%zu).\n", page_size);
-            return 1;
-        }
-
-        for (auto start_size = MIN_SIZE, step = MIN_SIZE / NUM_BINS; start_size <= MAX_SIZE; start_size *= 2, step *= 2)
+        for (auto start_size = MIN_SIZE, step = MIN_STEP; start_size <= MAX_SIZE; start_size *= 2, step *= 2)
         {
             for (auto size = start_size; size <= MAX_SIZE && size < start_size * 2; size += step)
             {
-                run_benchmark<BenchmarkTarget::Cache>(size, cache_line_bytes, true);
+                run_benchmark<BenchmarkTarget::Cache, true>(size, cache_line_bytes);
 
-                run_benchmark<BenchmarkTarget::TLB>(size, page_size, true);
-                run_benchmark<BenchmarkTarget::TLB>(size, page_size, false);
+                run_benchmark<BenchmarkTarget::TLB, true>(size, page_size);
+                run_benchmark<BenchmarkTarget::TLB, false>(size, page_size);
             }
         }
     }
