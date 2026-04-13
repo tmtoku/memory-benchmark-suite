@@ -1,5 +1,6 @@
 #pragma once
 
+#include <sys/mman.h>
 #include <unistd.h>
 #include <cstdlib>
 #include <fstream>
@@ -77,6 +78,23 @@ namespace common
         }();
 
         return hugepage_size;
+    }
+
+    template <typename T>
+    [[nodiscard]] auto allocate_hugepage_buffer(const std::size_t buffer_size_in_bytes)
+    {
+        const auto hugepage_size = get_hugepage_size();
+        const auto size = (buffer_size_in_bytes + hugepage_size - 1) / hugepage_size * hugepage_size;
+
+        void* const buffer =
+            mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB, -1, 0);
+        if (buffer == MAP_FAILED)
+        {
+            throw std::bad_alloc();
+        }
+
+        auto deleter = [size](T* p) noexcept { munmap(static_cast<void*>(p), size); };
+        return std::unique_ptr<T, decltype(deleter)>(static_cast<T*>(buffer), std::move(deleter));
     }
 
     template <typename T>

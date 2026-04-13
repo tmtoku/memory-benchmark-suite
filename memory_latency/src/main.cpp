@@ -3,7 +3,6 @@
 #include "perf_events.hpp"
 #include "utils.hpp"
 
-#include <sys/mman.h>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -170,9 +169,8 @@ namespace memory_latency
         return result;
     }
 
-    template <BenchmarkTarget BENCHMARK_TARGET>
-    void run_benchmark(const std::size_t buffer_size_in_bytes, const std::size_t padded_bytes_per_element,
-                       const bool use_hugepage)
+    template <BenchmarkTarget BENCHMARK_TARGET, bool USE_HUGEPAGE>
+    void run_benchmark(const std::size_t buffer_size_in_bytes, const std::size_t padded_bytes_per_element)
     {
         constexpr auto NUM_LOGICAL_LOADS = std::int32_t{1'000'000};
         constexpr auto RAND_SEED = std::uint64_t{12345};
@@ -183,24 +181,17 @@ namespace memory_latency
             return;
         }
         const auto num_elements = buffer_size_in_bytes / padded_bytes_per_element;
-        const auto page_size = use_hugepage ? common::get_hugepage_size() : common::get_page_size();
 
-        auto buffer = common::allocate_aligned_buffer<MemoryAddress>(buffer_size_in_bytes, page_size);
-
-        if (use_hugepage)
-        {
-            if (madvise(static_cast<void*>(buffer.get()), buffer_size_in_bytes, MADV_HUGEPAGE) != 0)
+        auto buffer = [buffer_size_in_bytes] {
+            if constexpr (USE_HUGEPAGE)
             {
-                std::cerr << "Warning: madvise(MADV_HUGEPAGE) failed: " << std::strerror(errno) << "\n";
+                return common::allocate_hugepage_buffer<MemoryAddress>(buffer_size_in_bytes);
             }
-        }
-        else
-        {
-            if (madvise(static_cast<void*>(buffer.get()), buffer_size_in_bytes, MADV_NOHUGEPAGE) != 0)
+            else
             {
-                std::cerr << "Warning: madvise(MADV_NOHUGEPAGE) failed: " << std::strerror(errno) << "\n";
+                return common::allocate_aligned_buffer<MemoryAddress>(buffer_size_in_bytes, common::get_page_size());
             }
-        }
+        }();
 
         auto* const start_ptr =
             generate_random_pointer_chasing(buffer.get(), num_elements, padded_bytes_per_element, RAND_SEED);
@@ -218,6 +209,7 @@ namespace memory_latency
 
         if (result)
         {
+            const auto page_size = USE_HUGEPAGE ? common::get_hugepage_size() : common::get_page_size();
             print_csv_row<BENCHMARK_TARGET>(buffer_size_in_bytes, padded_bytes_per_element, page_size,
                                             NUM_LOGICAL_LOADS, result.value());
         }
