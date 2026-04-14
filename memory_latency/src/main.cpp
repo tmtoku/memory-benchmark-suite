@@ -226,7 +226,6 @@ int main()
     try
     {
         const auto cache_line_bytes = common::get_cache_line_bytes();
-        const auto page_size = common::get_page_size();
 
         constexpr auto MIN_SIZE = 16 * common::KiB;
         constexpr auto MAX_SIZE = 256 * common::MiB;
@@ -238,9 +237,17 @@ int main()
             for (auto size = start_size; size <= MAX_SIZE && size < start_size * 2; size += step)
             {
                 run_benchmark<BenchmarkTarget::Cache, true>(size, cache_line_bytes);
+            }
+        }
 
-                run_benchmark<BenchmarkTarget::TLB, true>(size, page_size);
-                run_benchmark<BenchmarkTarget::TLB, false>(size, page_size);
+        const auto tlb_min_step = common::get_page_size() + cache_line_bytes;
+        const auto tlb_min_size = NUM_BINS * tlb_min_step;
+        for (auto start_size = tlb_min_size, step = tlb_min_step; start_size <= MAX_SIZE; start_size *= 2, step *= 2)
+        {
+            for (auto size = start_size; size <= MAX_SIZE && size < start_size * 2; size += step)
+            {
+                run_benchmark<BenchmarkTarget::TLB, true>(size, tlb_min_step);
+                run_benchmark<BenchmarkTarget::TLB, false>(size, tlb_min_step);
             }
         }
     }
