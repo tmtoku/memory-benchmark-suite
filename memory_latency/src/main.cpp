@@ -3,6 +3,8 @@
 #include "perf_events.hpp"
 #include "utils.hpp"
 
+#include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -55,7 +57,7 @@ namespace memory_latency
     std::optional<BenchmarkResult> measure_pointer_chasing(MemoryAddress* const start_ptr, perf_counter& cycle_counter)
     {
         constexpr auto NUM_LOGICAL_LOADS = std::int32_t{1'000'000};
-        constexpr auto NUM_TRIALS = std::int32_t{20};
+        constexpr auto NUM_TRIALS = std::int32_t{10};
         constexpr auto NUM_WARMUPS = std::int32_t{3};
 
         const auto open_counter = [](const char* name, const std::int32_t group_fd) {
@@ -173,7 +175,7 @@ namespace memory_latency
     void run_benchmark(const std::size_t buffer_size_in_bytes, const std::size_t padded_bytes_per_element)
     {
         constexpr auto NUM_LOGICAL_LOADS = std::int32_t{1'000'000};
-        constexpr auto RAND_SEED = std::uint64_t{12345};
+        constexpr auto NUM_SEEDS = std::size_t{5};
 
         if (buffer_size_in_bytes % padded_bytes_per_element != 0)
         {
@@ -193,9 +195,6 @@ namespace memory_latency
             }
         }();
 
-        auto* const start_ptr =
-            generate_random_pointer_chasing(buffer.get(), num_elements, padded_bytes_per_element, RAND_SEED);
-
         auto cycle_counter = perf_counter_open_by_name(perf_events::CYCLES, -1);
         if (!perf_counter_is_valid(&cycle_counter))
         {
@@ -203,16 +202,29 @@ namespace memory_latency
             return;
         }
 
-        const auto result = measure_pointer_chasing<BENCHMARK_TARGET>(start_ptr, cycle_counter);
+        auto seed_results = std::array<BenchmarkResult, NUM_SEEDS>{};
+        for (std::size_t i = 0; i < NUM_SEEDS; ++i)
+        {
+            auto* const start_ptr =
+                generate_random_pointer_chasing(buffer.get(), num_elements, padded_bytes_per_element, i);
+            const auto result = measure_pointer_chasing<BENCHMARK_TARGET>(start_ptr, cycle_counter);
+            if (!result)
+            {
+                perf_counter_close(&cycle_counter);
+                return;
+            }
+            seed_results[i] = result.value();
+        }
 
         perf_counter_close(&cycle_counter);
 
-        if (result)
-        {
-            const auto page_size = USE_HUGEPAGE ? common::get_hugepage_size() : common::get_page_size();
-            print_csv_row<BENCHMARK_TARGET>(buffer_size_in_bytes, padded_bytes_per_element, page_size,
-                                            NUM_LOGICAL_LOADS, result.value());
-        }
+        std::nth_element(seed_results.begin(), seed_results.begin() + (NUM_SEEDS / 2), seed_results.end(),
+                         [](const auto& a, const auto& b) { return a.cycle_count < b.cycle_count; });
+        const auto& median_result = seed_results[NUM_SEEDS / 2];
+
+        const auto page_size = USE_HUGEPAGE ? common::get_hugepage_size() : common::get_page_size();
+        print_csv_row<BENCHMARK_TARGET>(buffer_size_in_bytes, padded_bytes_per_element, page_size, NUM_LOGICAL_LOADS,
+                                        median_result);
     }
 
 }  // namespace memory_latency
