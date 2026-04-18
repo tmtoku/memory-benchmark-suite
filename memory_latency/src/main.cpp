@@ -12,6 +12,7 @@
 #include <iostream>
 #include <limits>
 #include <optional>
+#include <string_view>
 
 namespace memory_latency
 {
@@ -229,38 +230,66 @@ namespace memory_latency
 
 }  // namespace memory_latency
 
-int main()
+int main(int argc, char* argv[])
 {
     using namespace memory_latency;
 
-    print_csv_header();
+    if (argc != 2)
+    {
+        fprintf(stderr, "Usage: %s <cache|tlb>\n", argv[0]);
+        return 1;
+    }
+    const auto benchmark_target = std::string_view(argv[1]);
 
     try
     {
         const auto cache_line_bytes = common::get_cache_line_bytes();
 
-        constexpr auto MIN_SIZE = 16 * common::KiB;
-        constexpr auto MAX_SIZE = 256 * common::MiB;
+        constexpr auto MAX_BUFFER_SIZE = 128 * common::MiB;
         constexpr auto NUM_BINS = std::size_t{4};
-        constexpr auto MIN_STEP = MIN_SIZE / NUM_BINS;
 
-        for (auto start_size = MIN_SIZE, step = MIN_STEP; start_size <= MAX_SIZE; start_size *= 2, step *= 2)
+        if (benchmark_target == "cache")
         {
-            for (auto size = start_size; size <= MAX_SIZE && size < start_size * 2; size += step)
+            constexpr auto MIN_SIZE = 16 * common::KiB;
+            constexpr auto MIN_STEP = MIN_SIZE / NUM_BINS;
+
+            print_csv_header();
+
+            for (auto start_size = MIN_SIZE, step = MIN_STEP; start_size <= MAX_BUFFER_SIZE; start_size *= 2, step *= 2)
             {
-                run_benchmark<BenchmarkTarget::Cache, true>(size, cache_line_bytes);
+                for (auto size = start_size; size <= MAX_BUFFER_SIZE && size < start_size * 2; size += step)
+                {
+                    run_benchmark<BenchmarkTarget::Cache, true>(size, cache_line_bytes);
+                }
             }
         }
-
-        const auto tlb_min_step = common::get_page_size() + cache_line_bytes;
-        const auto tlb_min_size = NUM_BINS * tlb_min_step;
-        for (auto start_size = tlb_min_size, step = tlb_min_step; start_size <= MAX_SIZE; start_size *= 2, step *= 2)
+        else if (benchmark_target == "tlb")
         {
-            for (auto size = start_size; size <= MAX_SIZE && size < start_size * 2; size += step)
+            const auto min_step = common::get_page_size() + cache_line_bytes;
+            const auto min_size = NUM_BINS * min_step;
+
+            print_csv_header();
+
+            for (auto start_size = min_size, step = min_step; start_size <= MAX_BUFFER_SIZE; start_size *= 2, step *= 2)
             {
-                run_benchmark<BenchmarkTarget::TLB, true>(size, tlb_min_step);
-                run_benchmark<BenchmarkTarget::TLB, false>(size, tlb_min_step);
+                for (auto size = start_size; size <= MAX_BUFFER_SIZE && size < start_size * 2; size += step)
+                {
+                    run_benchmark<BenchmarkTarget::TLB, true>(size, min_step);
+                }
             }
+
+            for (auto start_size = min_size, step = min_step; start_size <= MAX_BUFFER_SIZE; start_size *= 2, step *= 2)
+            {
+                for (auto size = start_size; size <= MAX_BUFFER_SIZE && size < start_size * 2; size += step)
+                {
+                    run_benchmark<BenchmarkTarget::TLB, false>(size, min_step);
+                }
+            }
+        }
+        else
+        {
+            fprintf(stderr, "Unknown benchmark target: %s\n", argv[1]);
+            return 1;
         }
     }
     catch (const std::exception& e)
