@@ -31,6 +31,10 @@ def parse_size(s: str) -> int:
     return int(s)
 
 
+def format_percent(x: float, _: int | None = None) -> str:
+    return f"{x * 100:.2f}"
+
+
 def format_bytes(n: float, _: int | None = None) -> str:
     v = int(n)
     for unit, thresh in [("G", 1 << 30), ("M", 1 << 20), ("K", 1 << 10)]:
@@ -47,12 +51,13 @@ def apply_log2_xaxis(ax: Axes) -> None:
     ax.xaxis.set_minor_formatter(ticker.NullFormatter())
     ax.tick_params(axis="x", which="major", labelrotation=0, labelsize=7)
     ax.tick_params(axis="x", which="minor", length=3)
-    ax.margins(x=0.01)
+    ax.margins(x=0.02)
 
 
-def apply_log2_yaxis(ax: Axes, ymin: float, ymax: float) -> None:
+def apply_log2_yaxis(ax: Axes, ymin: float | None = None, ymax: float | None = None) -> None:
     ax.set_yscale("log", base=2)
-    ax.set_ylim(ymin, ymax)
+    if ymin is not None or ymax is not None:
+        ax.set_ylim(ymin, ymax)
     ax.yaxis.set_major_locator(ticker.LogLocator(base=2, numticks=12))
     ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda v, _: str(int(v))))
     ax.yaxis.set_minor_locator(ticker.LogLocator(base=2, subs=[2**0.5], numticks=12))

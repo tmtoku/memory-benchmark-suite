@@ -11,6 +11,7 @@ from plot_utils import (
     apply_log2_yaxis,
     apply_percent_yaxis,
     format_bytes,
+    format_percent,
     parse_size,
     plot_cache_boundaries,
     setup_rcparams,
@@ -82,9 +83,9 @@ def print_cache_table(
     formatters = {
         "BufferSize": format_bytes,
         "Latency": "{:.2f}".format,
-        "L1_miss": lambda x: f"{x * 100:.2f}",
-        "L2_miss": lambda x: f"{x * 100:.2f}",
-        "L3_miss": lambda x: f"{x * 100:.2f}",
+        "L1_miss": format_percent,
+        "L2_miss": format_percent,
+        "L3_miss": format_percent,
     }
 
     title = f"Cache Hierarchy Analysis (PaddedElementSize: {format_bytes(CACHE_LINE_SIZE)})"
@@ -94,7 +95,7 @@ def print_cache_table(
     print(table)
     print()
     print(
-        f"Estimated latencies:"
+        "Estimated latencies:"
         f"  L1={l1_latency:.1f}  L2={l2_latency:.1f}  L3={l3_latency:.1f} cycles"
     )
     print()
@@ -149,13 +150,12 @@ def main() -> None:
         1,
         figsize=(5.5, 4.6),
         sharex=True,
-        gridspec_kw={"height_ratios": [6, 5]},
     )
 
     ax_lat.plot(
         x, data["Latency"], color=COLORS["latency"], marker="o", linewidth=1.0, label="Latency"
     )
-    apply_log2_yaxis(ax_lat, ymin=2, ymax=256)
+    apply_log2_yaxis(ax_lat)
     ax_lat.set_ylabel("Load latency (cycles)")
     apply_grid(ax_lat)
     plot_cache_boundaries(ax_lat, l1, l2, l3, show_label=True)
