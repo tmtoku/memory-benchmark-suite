@@ -4,7 +4,6 @@
 
 #include <immintrin.h>
 #include <omp.h>
-#include <sys/mman.h>
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -12,7 +11,6 @@
 #include <iostream>
 #include <limits>
 #include <memory>
-#include <new>
 #include <numeric>
 #include <vector>
 
@@ -36,7 +34,7 @@ namespace
     };
     static_assert(alignof(ThreadResult) == std::hardware_destructive_interference_size);
 
-    using BufferPtr = std::unique_ptr<std::uint64_t, void (*)(void*)>;
+    using BufferPtr = std::unique_ptr<std::uint64_t, common::MunmapDeleter>;
 
     constexpr auto load_kernel = [](const std::uint64_t* const buffer, const std::size_t num_elements,
                                     const std::size_t num_reps) {
@@ -200,7 +198,7 @@ int main()
         thread_local_buffers.reserve(max_threads);
         for (std::int32_t i = 0; i < max_threads; ++i)
         {
-            thread_local_buffers.emplace_back(nullptr, std::free);
+            thread_local_buffers.emplace_back(nullptr, common::MunmapDeleter{});
         }
 
         constexpr auto MIN_BUFFER_SIZE = 8 * common::KiB;
@@ -209,11 +207,7 @@ int main()
 #pragma omp parallel num_threads(max_threads)
         {
             const auto tid = omp_get_thread_num();
-            auto buffer = common::allocate_aligned_buffer<std::uint64_t>(max_buffer_size, common::get_hugepage_size());
-            if (madvise(static_cast<void*>(buffer.get()), max_buffer_size, MADV_HUGEPAGE) != 0)
-            {
-                std::cerr << "Warning: madvise(MADV_HUGEPAGE) failed: " << std::strerror(errno) << "\n";
-            }
+            auto buffer = common::allocate_hugepage_buffer<std::uint64_t>(max_buffer_size);
             std::memset(buffer.get(), 1, max_buffer_size);
             thread_local_buffers[tid] = std::move(buffer);
         }

@@ -116,8 +116,14 @@ namespace common
         return hugepage_size;
     }
 
+    struct MunmapDeleter
+    {
+        std::size_t size = 0;
+        void operator()(void* p) const noexcept { munmap(p, size); }
+    };
+
     template <typename T>
-    [[nodiscard]] auto allocate_hugepage_buffer(const std::size_t buffer_size_in_bytes)
+    [[nodiscard]] std::unique_ptr<T, MunmapDeleter> allocate_hugepage_buffer(const std::size_t buffer_size_in_bytes)
     {
         const auto hugepage_size = get_hugepage_size();
         const auto size = (buffer_size_in_bytes + hugepage_size - 1) / hugepage_size * hugepage_size;
@@ -129,8 +135,7 @@ namespace common
             throw std::bad_alloc();
         }
 
-        auto deleter = [size](T* p) noexcept { munmap(static_cast<void*>(p), size); };
-        return std::unique_ptr<T, decltype(deleter)>(static_cast<T*>(buffer), std::move(deleter));
+        return {static_cast<T*>(buffer), MunmapDeleter{size}};
     }
 
     template <typename T>
