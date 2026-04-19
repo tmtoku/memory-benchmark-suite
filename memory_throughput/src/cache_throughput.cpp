@@ -1,7 +1,6 @@
 #include "common.hpp"
 #include "perf_counter.h"
 #include "perf_events.hpp"
-#include "utils.hpp"
 
 #include <immintrin.h>
 #include <omp.h>
@@ -17,22 +16,22 @@
 #include <numeric>
 #include <vector>
 
-namespace cache_throughput
+namespace
 {
     struct BenchmarkResult
     {
         std::uint64_t elapsed_cycles = std::numeric_limits<std::uint64_t>::max();
         std::uint64_t total_cycles = 0;
-        std::uint64_t load_ops = 0;
-        std::uint64_t load_queue_stalls = 0;
+        std::uint64_t num_loads = 0;
+        std::uint64_t lsq_stall_cycles = 0;
         std::uint64_t l3_miss_count = 0;
     };
 
     struct alignas(std::hardware_destructive_interference_size) ThreadResult
     {
         std::uint64_t cycles = 0;
-        std::uint64_t loads = 0;
-        std::uint64_t load_queue_stalls = 0;
+        std::uint64_t num_loads = 0;
+        std::uint64_t lsq_stall_cycles = 0;
         std::uint64_t l3_miss_count = 0;
     };
     static_assert(alignof(ThreadResult) == std::hardware_destructive_interference_size);
@@ -59,15 +58,15 @@ namespace cache_throughput
 
     void print_csv_header()
     {
-        std::cout
-            << "Threads,BufferSize,ElapsedCycles,TotalCycles,LoadOps,BytesPerLoad,LoadQueueStallCycles,L3Misses\n";
+        std::cout << "Threads,BufferSize,ElapsedCycles,TotalCycles,NumLoads,BytesPerOp,LSQueueStallCycles,"
+                     "L3Misses\n";
     }
 
-    template <std::size_t BYTES_PER_LOAD>
+    template <std::size_t BYTES_PER_OP>
     void print_csv_row(const std::int32_t num_threads, const std::size_t buffer_size, const BenchmarkResult& result)
     {
         std::cout << num_threads << "," << buffer_size << "," << result.elapsed_cycles << "," << result.total_cycles
-                  << "," << result.load_ops << "," << BYTES_PER_LOAD << "," << result.load_queue_stalls << ","
+                  << "," << result.num_loads << "," << BYTES_PER_OP << "," << result.lsq_stall_cycles << ","
                   << result.l3_miss_count << "\n";
     }
 
@@ -82,21 +81,21 @@ namespace cache_throughput
         {
             auto total_cycles = std::uint64_t{0};
             auto total_loads = std::uint64_t{0};
-            auto total_load_queue_stalls = std::uint64_t{0};
+            auto total_lsq_stall_cycles = std::uint64_t{0};
             auto total_l3_miss_count = std::uint64_t{0};
 
             for (const auto& thread_result : thread_results)
             {
                 total_cycles += thread_result.cycles;
-                total_loads += thread_result.loads;
-                total_load_queue_stalls += thread_result.load_queue_stalls;
+                total_loads += thread_result.num_loads;
+                total_lsq_stall_cycles += thread_result.lsq_stall_cycles;
                 total_l3_miss_count += thread_result.l3_miss_count;
             }
 
             result.elapsed_cycles = max_cycles;
             result.total_cycles = total_cycles;
-            result.load_ops = total_loads;
-            result.load_queue_stalls = total_load_queue_stalls;
+            result.num_loads = total_loads;
+            result.lsq_stall_cycles = total_lsq_stall_cycles;
             result.l3_miss_count = total_l3_miss_count;
         }
     }
@@ -108,10 +107,10 @@ namespace cache_throughput
         constexpr auto NUM_WARMUPS = std::int32_t{3};
         constexpr auto NUM_TRIALS = std::int32_t{20};
 
-        constexpr auto TOTAL_BYTES_TO_LOAD = 1 * common::GiB;
-        constexpr auto BYTES_PER_LOAD = std::size_t{32};
+        constexpr auto TOTAL_BYTES = 1 * common::GiB;
+        constexpr auto BYTES_PER_OP = std::size_t{32};
 
-        const auto num_reps = (TOTAL_BYTES_TO_LOAD + buffer_size - 1) / buffer_size;
+        const auto num_reps = (TOTAL_BYTES + buffer_size - 1) / buffer_size;
         const auto num_elements = buffer_size / sizeof(std::uint64_t);
 
         BenchmarkResult result;
@@ -177,14 +176,12 @@ namespace cache_throughput
             perf_counter_close(&cycle_counter);
         }
 
-        print_csv_row<BYTES_PER_LOAD>(num_threads, buffer_size, result);
+        print_csv_row<BYTES_PER_OP>(num_threads, buffer_size, result);
     }
-}  // namespace cache_throughput
+}  // namespace
 
 int main()
 {
-    using namespace cache_throughput;
-
     print_csv_header();
 
     try
@@ -207,7 +204,7 @@ int main()
         }
 
         constexpr auto MIN_BUFFER_SIZE = 8 * common::KiB;
-        const auto max_buffer_size = memory_throughput::get_cache_size(3);
+        const auto max_buffer_size = common::get_cache_size(3);
 
 #pragma omp parallel num_threads(max_threads)
         {

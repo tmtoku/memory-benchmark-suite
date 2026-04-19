@@ -1,6 +1,5 @@
 add_executable(cache_throughput
     src/cache_throughput.cpp
-    src/utils.hpp
 )
 
 target_link_libraries(cache_throughput PRIVATE
