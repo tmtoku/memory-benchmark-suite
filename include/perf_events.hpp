@@ -33,13 +33,7 @@ namespace perf_events
         "amd64_fam17h_zen2::DISPATCH_RESOURCE_STALL_CYCLES_1"
         ":LOAD_QUEUE_RSRC_STALL";
 #else
-    constexpr auto L1D_MISS = "perf::L1-DCACHE-LOAD-MISSES";
-    constexpr auto L2_MISS = "perf::LLC-LOAD-MISSES";
-    constexpr auto L3_MISS = "perf::LLC-LOAD-MISSES";
-    constexpr auto L1_TLB_MISS = "perf::DTLB-LOAD-MISSES";
-    constexpr auto L2_TLB_MISS = "perf::DTLB-LOAD-MISSES";
-    constexpr auto LOADS = "perf::L1-DCACHE-LOADS";
-    constexpr auto LOAD_QUEUE_STALL_CYCLES = "";
+#error "Unsupported arch"
 #endif
 
 }  // namespace perf_events
