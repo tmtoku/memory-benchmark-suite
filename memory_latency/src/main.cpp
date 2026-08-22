@@ -209,7 +209,7 @@ namespace memory_latency
                 return;
             }
 
-            auto seed_results = std::array<BenchmarkResult, NUM_SEEDS>{};
+            std::array<BenchmarkResult, NUM_SEEDS> seed_results;
             for (std::size_t i = 0; i < NUM_SEEDS; ++i)
             {
                 auto* const start_ptr =
