@@ -57,4 +57,4 @@ add_compile_options(-g -O3 -march=${MICRO_BENCHMARK_SUITE_ARCH})
 #
 add_subdirectory(memory_latency)
 add_subdirectory(memory_throughput)
-
+add_subdirectory(integer_division)

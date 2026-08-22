@@ -32,6 +32,7 @@ namespace perf_events
     constexpr auto LOAD_QUEUE_STALL_CYCLES =
         "amd64_fam17h_zen2::DISPATCH_RESOURCE_STALL_CYCLES_1"
         ":LOAD_QUEUE_RSRC_STALL";
+    constexpr auto DIVIDER_BUSY_CYCLES = "amd64_fam17h_zen2::DIV_CYCLES_BUSY_COUNT";
 #else
 #error "Unsupported arch"
 #endif

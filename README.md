@@ -34,6 +34,7 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release -DMICRO_BENCHMARK_SUITE_ARCH=znver2
 
 - **memory_latency** — load latency at each cache level, measured via random pointer chasing to minimize hardware prefetcher effects
 - **memory_throughput** — load throughput at each cache level, measured across multiple thread counts
+- **integer_division** — `idivq` latency with different dividend or quotient bit lengths
 
 ## License
 
