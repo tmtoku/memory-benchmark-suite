@@ -1,9 +1,9 @@
-add_executable(memory_latency
-    src/main.cpp
+add_executable(cache_latency
+    src/cache_latency.cpp
     src/utils.hpp
 )
 
-target_link_libraries(memory_latency PRIVATE
+target_link_libraries(cache_latency PRIVATE
     micro_benchmark_common
     perf_counter::perf_counter
 )
