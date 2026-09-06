@@ -7,3 +7,13 @@ target_link_libraries(cache_latency PRIVATE
     micro_benchmark_common
     perf_counter::perf_counter
 )
+
+add_executable(tlb_latency
+    src/tlb_latency.cpp
+    src/utils.hpp
+)
+
+target_link_libraries(tlb_latency PRIVATE
+    micro_benchmark_common
+    perf_counter::perf_counter
+)

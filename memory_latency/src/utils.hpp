@@ -38,6 +38,35 @@ namespace memory_latency
             auto* const element_ptr = reinterpret_cast<unsigned char*>(buffer) + (index * padded_bytes_per_element);
             return reinterpret_cast<MemoryAddress*>(element_ptr);
         }
+
+        template <typename GetElementLocation>
+        [[nodiscard]] inline MemoryAddress* generate_random_pointer_chasing(
+            const std::size_t num_elements, const GetElementLocation& get_element_location, const std::uint64_t seed)
+        {
+            if (num_elements == 0)
+            {
+                return nullptr;
+            }
+
+            const auto indices = generate_random_permutation(num_elements, seed);
+
+            // Link elements according to the shuffled indices
+            for (std::size_t i = 0; i < num_elements - 1; ++i)
+            {
+                // indices[i] -> indices[i+1]
+                MemoryAddress* const current_ptr = get_element_location(indices[i]);
+                MemoryAddress* const next_ptr = get_element_location(indices[i + 1]);
+                *current_ptr = reinterpret_cast<MemoryAddress>(next_ptr);
+            }
+
+            // indices[num_elements-1] -> indices[0]
+            MemoryAddress* const last_ptr = get_element_location(indices[num_elements - 1]);
+            MemoryAddress* const first_ptr = get_element_location(indices[0]);
+            *last_ptr = reinterpret_cast<MemoryAddress>(first_ptr);
+
+            // Return the entry point of the cyclic list
+            return first_ptr;
+        }
     }  // namespace detail
 
     [[nodiscard]] inline MemoryAddress* generate_random_pointer_chasing(MemoryAddress* const buffer,
@@ -68,27 +97,10 @@ namespace memory_latency
                                         std::to_string(sizeof(MemoryAddress)) + ".");
         }
 
-        const auto indices = detail::generate_random_permutation(num_elements, seed);
-
-        // Link elements according to the shuffled indices
-        for (std::size_t i = 0; i < num_elements - 1; ++i)
-        {
-            // indices[i] -> indices[i+1]
-            MemoryAddress* const current_ptr =
-                detail::get_element_location(buffer, indices[i], padded_bytes_per_element);
-            MemoryAddress* const next_ptr =
-                detail::get_element_location(buffer, indices[i + 1], padded_bytes_per_element);
-            *current_ptr = reinterpret_cast<MemoryAddress>(next_ptr);
-        }
-
-        // indices[num_elements-1] -> indices[0]
-        MemoryAddress* const last_ptr =
-            detail::get_element_location(buffer, indices[num_elements - 1], padded_bytes_per_element);
-        MemoryAddress* const first_ptr = detail::get_element_location(buffer, indices[0], padded_bytes_per_element);
-        *last_ptr = reinterpret_cast<MemoryAddress>(first_ptr);
-
-        // Return the entry point of the cyclic list
-        return first_ptr;
+        const auto get_element_location = [buffer, padded_bytes_per_element](const std::size_t index) {
+            return detail::get_element_location(buffer, index, padded_bytes_per_element);
+        };
+        return detail::generate_random_pointer_chasing(num_elements, get_element_location, seed);
     }
 
     template <std::int32_t NUM_STEPS>
