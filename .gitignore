@@ -51,3 +51,7 @@ cmake_install.cmake
 
 # Python
 __pycache__/
+
+# Benchmark outputs
+*.csv
+*.pdf
